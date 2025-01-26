@@ -2,8 +2,6 @@
 > I am planning to spend a year abroad for academic purposes in the upcoming year. Currently, I am in the process of identifying an appropriate laboratory or supervisor, but I am finding it challenging to locate the right connections. My research interests are primarily in the fields of 3D reconstruction and computer vision. I would be immensely grateful if anyone could offer some guidance or suggestions in this regard. Should you be willing to assist, please do not hesitate to reach out to me via my personal email: 374774222@qq.com. Thank you in advance for your consideration.
 
 # VastGaussian
-[<img src="https://api.gitsponsors.com/api/badge/img?id=800327971" height="50">](https://api.gitsponsors.com/api/badge/link?p=0uC7/ILazeoYHhjo5AqXokUHcbSZEjVBTcdNOhseAsnWY0hmc/jpkD2/QVbdJ1nUinL+Z1njrEi/AxVcDdh3sfnH26yYeYlZAqVXj3Xl/O2F3vT05R9sTz9DtKLXbius6Kpq0TusUBfhi5QqVtaEIA==)
-
 ![img.png](assets/img_.png)
 
 This is `VastGaussian: Vast 3D Gaussians for Large Scene Reconstruction` unofficial implementation, since this is my first time to recreate the complete code from scratch, the code may have some errors, and the code writing may seem a bit naive compared to some experts. Lack of engineering skills. But I got my foot in the door. I couldn't find any implementation of VastGaussian on the web, so I gave it a try.
@@ -277,9 +275,6 @@ python metrics.py -m output/building
 
 2. `Mill-19`: https://opendatalab.com/OpenDataLab/Mill_19/tree/main/raw
 > https://vastgaussian.github.io/ have uploaded the pre-processed data for `Urbanscene3D` and `Mill-19`
->
-> Since the data provided by vastgaussia.github.io is invalid, I uploaded the data I downloaded to [Baidu web disk](https://pan.baidu.com/s/1sQZml1XpFGjKlEEsqSpaVw?pwd=5g3h), password `5g3h`
-
 
 3. test data for this implementation: https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/input/tandt_db.zip
 

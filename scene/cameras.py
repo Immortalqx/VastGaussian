@@ -17,7 +17,7 @@ from utils.graphics_utils import getWorld2View2, getProjectionMatrix
 
 class SimpleCamera(nn.Module):
     def __init__(self, colmap_id, R, T, FoVx, FoVy, image_name, uid, width, height,
-                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device="cuda"):
+                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device="cuda", depth_path=None):
         super(SimpleCamera, self).__init__()
         self.uid = uid
         self.colmap_id = colmap_id
@@ -28,6 +28,7 @@ class SimpleCamera(nn.Module):
         self.image_name = image_name
         self.image_width = width
         self.image_height = height
+        self.depth_path = depth_path # 应急，暂时放在这里。。。
         try:
             self.data_device = torch.device(data_device)
         except Exception as e:
@@ -47,8 +48,11 @@ class SimpleCamera(nn.Module):
         self.full_proj_transform = (
             self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(
             0)  # 世界->相机->裁减空间->NDC空间
-        self.camera_center = self.world_view_transform.inverse()[3,
-                             :3]  # 相机中心在世界坐标系下的坐标 world_view_transform进行了一下转置，所以取[3, :3]
+        # 相机中心在世界坐标系下的坐标 world_view_transform进行了一下转置，所以取[3, :3]
+        self.camera_center = self.world_view_transform.inverse()[3,:3]
+        # FIXME 下面需不需要取逆呢？？？
+        self.camera_rotation = self.world_view_transform[:3, :3]
+        # self.camera_rotation = self.world_view_transform.inverse()[:3, :3]
 
 
 class Camera(nn.Module):

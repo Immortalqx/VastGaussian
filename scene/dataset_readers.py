@@ -25,6 +25,9 @@ from utils.sh_utils import SH2RGB
 from utils.partition_utils import read_camList
 from scene.gaussian_model import BasicPointCloud
 
+import cv2
+
+
 class CameraInfo(NamedTuple):
     uid: int
     R: np.array
@@ -36,6 +39,8 @@ class CameraInfo(NamedTuple):
     image_name: str
     width: int
     height: int
+    # depth: np.array  # 新增一个depth
+
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -43,6 +48,7 @@ class SceneInfo(NamedTuple):
     test_cameras: list
     nerf_normalization: dict
     ply_path: str
+
 
 def getNerfppNorm(cam_info):
     def get_center_and_diag(cam_centers):
@@ -102,7 +108,7 @@ def readColmapCamerasPartition(cam_extrinsics, cam_intrinsics, images_folder, ma
 
         params = np.array(intr.params)
 
-        if intr.model == "SIMPLE_PINHOLE":   # 使用SIMPLE_PINHOLE相机模型，适用于非畸变图像，它有一个焦距参数，也可以理解为fx=fy
+        if intr.model == "SIMPLE_PINHOLE":  # 使用SIMPLE_PINHOLE相机模型，适用于非畸变图像，它有一个焦距参数，也可以理解为fx=fy
             focal_length_x = intr.params[0]  # 相机内参
             FovY = focal2fov(focal_length_x, height)
             FovX = focal2fov(focal_length_x, width)
@@ -115,11 +121,25 @@ def readColmapCamerasPartition(cam_extrinsics, cam_intrinsics, images_folder, ma
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"  # Colmap相机模型未处理：仅支持未失真的数据集（PINHOLE或SIMPLE_PINHOLE相机）！
 
         image_path = os.path.join(images_folder, os.path.basename(extr.name))  # 获取该图片路径
-        image_name = os.path.basename(image_path).split(".")[0]  # 获取该图片名称
-        image = None  # 此处不加载
+        # image_name = os.path.basename(image_path).split(".")[0]  # 获取该图片名称
+        image_name = os.path.splitext(os.path.basename(image_path))[0]
+
+        # # FIXME 我在这里增加了读取图片的代码。我猜测在此处读取图片可能会导致内存占用过高！
+        # #  以后可以考虑划分子图的时候，临时读取和删除depth以及image。
+        # depth_path = image_path.replace("/images/", "/depth/").replace(".png", ".tiff")
+        # image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+        # depth = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
+        # # FIXME 等以后重构了再考虑优化下面这两行代码，这几段代码放这里肯定是不好的。
+        # #  懒得重新算相机内参了，直接让depth resize成image的shape了。
+        # if image.shape[:2] != depth.shape:
+        #     depth = cv2.resize(depth, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+        image = None
+        # depth = None
 
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
                               image_path=image_path, image_name=image_name, width=width, height=height)
+        # image_path=image_path, image_name=image_name, width=width, height=height, depth=depth)
 
         cam_infos.append(cam_info)  # 存储所有图片的 相机模型id，旋转矩阵 平移向量，视角场，图片数据，图片路径，图片名，图片宽高
     sys.stdout.write('\n')
@@ -131,7 +151,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, man_trans):
     for idx, key in enumerate(cam_extrinsics):
         sys.stdout.write('\r')
         # the exact output you're looking for:
-        sys.stdout.write("Reading camera {}/{}".format(idx+1, len(cam_extrinsics)))
+        sys.stdout.write("Reading camera {}/{}".format(idx + 1, len(cam_extrinsics)))
         sys.stdout.flush()
 
         extr = cam_extrinsics[key]
@@ -154,17 +174,17 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, man_trans):
             W2C[:3, :3] = R.transpose()
             W2C[:3, -1] = T
             W2C[3, 3] = 1.0
-            W2nC = W2C @ np.linalg.inv(man_trans)   # 相机跟着点云旋转平移后得到新的相机坐标系nC
+            W2nC = W2C @ np.linalg.inv(man_trans)  # 相机跟着点云旋转平移后得到新的相机坐标系nC
 
             R = W2nC[:3, :3]
             R = R.transpose()
             T = W2nC[:3, -1]
 
-        if intr.model=="SIMPLE_PINHOLE":
+        if intr.model == "SIMPLE_PINHOLE":
             focal_length_x = intr.params[0]
             FovY = focal2fov(focal_length_x, height)
             FovX = focal2fov(focal_length_x, width)
-        elif intr.model=="PINHOLE":
+        elif intr.model == "PINHOLE":
             focal_length_x = intr.params[0]
             focal_length_y = intr.params[1]
             FovY = focal2fov(focal_length_y, height)
@@ -173,7 +193,8 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, man_trans):
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
         image_path = os.path.join(images_folder, os.path.basename(extr.name))
-        image_name = os.path.basename(image_path).split(".")[0]
+        # image_name = os.path.basename(image_path).split(".")[0]
+        image_name = os.path.splitext(os.path.basename(image_path))[0]
         image = Image.open(image_path)
 
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
@@ -189,7 +210,7 @@ def readColmapCamerasEval(cam_extrinsics, cam_intrinsics, images_folder, man_tra
     for idx, key in enumerate(cam_extrinsics):
         sys.stdout.write('\r')
         # the exact output you're looking for:
-        sys.stdout.write("Reading camera {}/{}".format(idx+1, len(cam_extrinsics)))
+        sys.stdout.write("Reading camera {}/{}".format(idx + 1, len(cam_extrinsics)))
         sys.stdout.flush()
 
         extr = cam_extrinsics[key]
@@ -212,17 +233,17 @@ def readColmapCamerasEval(cam_extrinsics, cam_intrinsics, images_folder, man_tra
             W2C[:3, :3] = R.transpose()
             W2C[:3, -1] = T
             W2C[3, 3] = 1.0
-            W2nC = W2C @ np.linalg.inv(man_trans)   # 相机跟着点云旋转平移后得到新的相机坐标系nC
+            W2nC = W2C @ np.linalg.inv(man_trans)  # 相机跟着点云旋转平移后得到新的相机坐标系nC
 
             R = W2nC[:3, :3]
             R = R.transpose()
             T = W2nC[:3, -1]
 
-        if intr.model=="SIMPLE_PINHOLE":
+        if intr.model == "SIMPLE_PINHOLE":
             focal_length_x = intr.params[0]
             FovY = focal2fov(focal_length_x, height)
             FovX = focal2fov(focal_length_x, width)
-        elif intr.model=="PINHOLE":
+        elif intr.model == "PINHOLE":
             focal_length_x = intr.params[0]
             focal_length_y = intr.params[1]
             FovY = focal2fov(focal_length_y, height)
@@ -231,7 +252,8 @@ def readColmapCamerasEval(cam_extrinsics, cam_intrinsics, images_folder, man_tra
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
         image_path = os.path.join(images_folder, os.path.basename(extr.name))
-        image_name = os.path.basename(image_path).split(".")[0]
+        # image_name = os.path.basename(image_path).split(".")[0]
+        image_name = os.path.splitext(os.path.basename(image_path))[0]
         if image_name in test_camList:
             # 只读取测试机的图片
             image = Image.open(image_path)
@@ -243,6 +265,7 @@ def readColmapCamerasEval(cam_extrinsics, cam_intrinsics, images_folder, man_tra
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
+
 
 def fetchPly(path, man_trans=None):
     plydata = PlyData.read(path)
@@ -260,12 +283,13 @@ def fetchPly(path, man_trans=None):
     normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T  # 提取顶点的三个法向量属性，并堆叠在一起
     return BasicPointCloud(points=positions, colors=colors, normals=normals)
 
+
 def storePly(path, xyz, rgb):
     # Define the dtype for the structured array
     dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
-            ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4'),
-            ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
-    
+             ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4'),
+             ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
+
     normals = np.zeros_like(xyz)
 
     elements = np.empty(xyz.shape[0], dtype=dtype)
@@ -275,7 +299,9 @@ def storePly(path, xyz, rgb):
     # Create the PlyData object and write to file
     vertex_element = PlyElement.describe(elements, 'vertex')
     ply_data = PlyData([vertex_element])
+    ply_data.text = True
     ply_data.write(path)
+
 
 def readColmapSceneInfo(path, images, eval, llffhold=83):
     try:
@@ -290,7 +316,8 @@ def readColmapSceneInfo(path, images, eval, llffhold=83):
         cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
 
     reading_dir = "images" if images == None else images
-    cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=os.path.join(path, reading_dir))
+    cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics,
+                                           images_folder=os.path.join(path, reading_dir))
     cam_infos = sorted(cam_infos_unsorted.copy(), key=lambda x: x.image_name)
 
     if eval:
@@ -377,8 +404,9 @@ def readColmapSceneInfoEval(path, images, man_trans, model_path):
         cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
 
     images_dir = os.path.join(path, "images")
-    cam_infos_unsorted = readColmapCamerasEval(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=images_dir, man_trans=man_trans, model_path=model_path)
-    cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name)
+    cam_infos_unsorted = readColmapCamerasEval(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics,
+                                               images_folder=images_dir, man_trans=man_trans, model_path=model_path)
+    cam_infos = sorted(cam_infos_unsorted.copy(), key=lambda x: x.image_name)
 
     train_cam_infos = []
     test_cam_infos = cam_infos
@@ -474,7 +502,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
 
             # get the world-to-camera transform and set R, T
             w2c = np.linalg.inv(c2w)
-            R = np.transpose(w2c[:3,:3])  # R is stored transposed due to 'glm' in CUDA code
+            R = np.transpose(w2c[:3, :3])  # R is stored transposed due to 'glm' in CUDA code
             T = w2c[:3, 3]
 
             image_path = os.path.join(path, cam_name)
@@ -483,27 +511,29 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
 
             im_data = np.array(image.convert("RGBA"))
 
-            bg = np.array([1,1,1]) if white_background else np.array([0, 0, 0])
+            bg = np.array([1, 1, 1]) if white_background else np.array([0, 0, 0])
 
             norm_data = im_data / 255.0
-            arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
-            image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
+            arr = norm_data[:, :, :3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
+            image = Image.fromarray(np.array(arr * 255.0, dtype=np.byte), "RGB")
 
             fovy = focal2fov(fov2focal(fovx, image.size[0]), image.size[1])
-            FovY = fovy 
+            FovY = fovy
             FovX = fovx
 
             cam_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                            image_path=image_path, image_name=image_name, width=image.size[0], height=image.size[1]))
-            
+                                        image_path=image_path, image_name=image_name, width=image.size[0],
+                                        height=image.size[1]))
+
     return cam_infos
+
 
 def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
     print("Reading Training Transforms")
     train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension)
     print("Reading Test Transforms")
     test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", white_background, extension)
-    
+
     if not eval:
         train_cam_infos.extend(test_cam_infos)
         test_cam_infos = []
@@ -515,7 +545,7 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
         # Since this data set has no colmap data, we start with random points
         num_pts = 100_000
         print(f"Generating random point cloud ({num_pts})...")
-        
+
         # We create random points inside the bounds of the synthetic Blender scenes
         xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
         shs = np.random.random((num_pts, 3)) / 255.0
@@ -535,10 +565,138 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
     return scene_info
 
 
+def readColmapSceneToScannet(path, model_path, partition_id, man_trans, output_dir):
+    #################### 创建scannet格式的文件夹
+    pose_path = os.path.join(output_dir, "pose")
+    intrinsic_path = os.path.join(output_dir, "intrinsic")
+    scannet_image_path = os.path.join(output_dir, "color")
+    scannet_depth_path = os.path.join(output_dir, "depth")
+
+    if not os.path.exists(intrinsic_path):
+        os.makedirs(intrinsic_path)
+    if not os.path.exists(pose_path):
+        os.makedirs(pose_path)
+    if not os.path.exists(scannet_image_path):
+        os.makedirs(scannet_image_path)
+    if not os.path.exists(scannet_depth_path):
+        os.makedirs(scannet_depth_path)
+
+    #################### 读取所有图像的信息，包括相机内外参数，以及3D点云坐标
+    client_camera_txt_path = os.path.join(model_path, f"{partition_id}_camera.txt")
+    with open(client_camera_txt_path, 'r', encoding='utf-8') as file:
+        lines = file.readlines()
+    lines = [line.strip() for line in lines]
+    cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
+    cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.bin")
+    cam_extrinsics = read_extrinsics_binary_vast(cameras_extrinsic_file, lines)
+    cam_intrinsics = read_intrinsics_binary_vast(cameras_intrinsic_file, lines)
+    images_dir = os.path.join(path, "images")
+    cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics,
+                                           images_folder=images_dir,
+                                           man_trans=man_trans)  # 存储所有图片的 相机模型id，旋转矩阵 平移向量，视角场，图片数据，图片路径，图片名，图片宽高
+    cam_infos = sorted(cam_infos_unsorted.copy(), key=lambda x: x.image_name)  # 根据图片名称对 list进行排序
+
+    #################### 计算并且保存相机内参
+    fx_sum = 0
+    fy_sum = 0
+    cx_sum = 0
+    cy_sum = 0
+    count = 0
+
+    for id, camera in cam_intrinsics.items():
+        fx, fy, cx, cy = camera.params
+        fx_sum += fx
+        fy_sum += fy
+        cx_sum += cx
+        cy_sum += cy
+        count += 1
+
+    avg_fx = fx_sum / count
+    avg_fy = fy_sum / count
+    avg_cx = cx_sum / count
+    avg_cy = cy_sum / count
+
+    intrinsic_matrix = np.array([
+        [avg_fx, 0, avg_cx, 0],
+        [0, avg_fy, avg_cy, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1]
+    ])
+
+    with open(os.path.join(intrinsic_path, "intrinsic_color.txt"), 'w') as f:
+        for row in intrinsic_matrix:
+            f.write(" ".join(map(str, row)) + "\n")
+
+    image_id = 0
+    for cam_info in cam_infos:
+        #################### 计算并且保存相机位姿
+        # R = cam_info.R
+        # T = cam_info.T
+        #
+        # transformation_matrix = np.eye(4)
+        # transformation_matrix[:3, :3] = R
+        # transformation_matrix[:3, 3] = T
+        #
+        # output_path = os.path.join(pose_path, f"{image_id}.txt")
+        # with open(output_path, 'w') as f:
+        #     for row in transformation_matrix:
+        #         f.write(" ".join(map(str, row)) + "\n")
+        R_colmap = cam_info.R  # COLMAP 的旋转矩阵
+        T_colmap = cam_info.T  # COLMAP 的平移向量
+
+        # 计算 ScanNet 的位姿
+        R_scannet = R_colmap
+        T_scannet = -np.dot(R_scannet, T_colmap)  # 调整平移向量
+
+        # 构造 4x4 的变换矩阵
+        transformation_matrix = np.eye(4)
+        transformation_matrix[:3, :3] = R_scannet
+        transformation_matrix[:3, 3] = T_scannet
+
+        # 保存为文件
+        output_path = os.path.join(pose_path, f"{image_id}.txt")
+        with open(output_path, 'w') as f:
+            for row in transformation_matrix:
+                f.write(" ".join(map(str, row)) + "\n")
+
+        #################### 保存color和depth
+        image_path = cam_info.image_path
+        depth_path = image_path.replace("/images/", "/depth/").replace(".png", ".tiff")
+
+        # 读取image，保存到color中，格式jpg
+        try:
+            color_image = cv2.imread(image_path)
+            if color_image is None:
+                print(f"无法读取图像文件: {image_path}")
+                continue
+            output_color_path = os.path.join(scannet_image_path, f"{image_id}.jpg")
+            cv2.imwrite(output_color_path, color_image, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        except Exception as e:
+            print(f"保存color时出错: {image_path}, 错误: {e}")
+
+        # 读取depth，保存到depth中，格式png
+        try:
+            depth_image = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
+            depth_image = np.power(depth_image, 2.2)
+            if depth_image is None:
+                print(f"无法读取深度文件: {depth_path}")
+                continue
+            # 转换单位 m -> mm
+            depth_image_mm = (depth_image * 1000).astype(np.uint16)
+            output_depth_path = os.path.join(scannet_depth_path, f"{image_id}.png")
+            cv2.imwrite(output_depth_path, depth_image_mm)
+        except Exception as e:
+            print(f"保存depth时出错: {depth_path}, 错误: {e}")
+
+        image_id += 1
+
+
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
     "Blender": readNerfSyntheticInfo,
     "ColmapVast": readColmapSceneInfoVast,
     "ColmapEval": readColmapSceneInfoEval,
-    "Partition": partition
+    "Partition": partition,
+    "ColmapToScannet": readColmapSceneToScannet,
+    # "PartitionWithDepth": partitionWithDepth,
 }

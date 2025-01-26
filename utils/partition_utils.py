@@ -10,12 +10,13 @@ import os.path
 import scene
 from utils.camera_utils import cameraList_from_camInfos_partition
 
+
 def data_partition(lp):
     from scene.dataset_readers import sceneLoadTypeCallbacks
     from scene.vastgs.data_partition import ProgressiveDataPartitioning
 
     # 读取整个场景的点云以及相机，同时将相机划分为train和test
-    scene_info = sceneLoadTypeCallbacks["Partition"](lp.source_path, lp.images, lp.man_trans, lp.eval, lp.llffhold)  # 得到一个场景的所有参数信息
+    scene_info = sceneLoadTypeCallbacks["Partition"](lp.source_path, lp.images, lp.man_trans, lp.eval, lp.llffhold)
     with open(os.path.join(lp.model_path, "train_cameras.txt"), "w") as f:
         for cam in scene_info.train_cameras:
             image_name = cam.image_name
@@ -37,8 +38,10 @@ def data_partition(lp):
     for partition in partition_result:
         partition_id_list.append(partition.partition_id)
         camera_info = partition.cameras
-        image_name_list = [camera_info[i].camera.image_name + '.jpg' for i in range(len(camera_info))]
-        txt_file = f"{lp.model_path}/partition_point_cloud/visible/{partition.partition_id}_camera.txt"
+        # FIXME: 这里不能只是很简单的+ '.jpg'啊,需要判断一下!!!
+        # image_name_list = [camera_info[i].camera.image_name + '.jpg' for i in range(len(camera_info))]
+        image_name_list = [camera_info[i].camera.image_name + '.png' for i in range(len(camera_info))]
+        txt_file = f"{lp.model_path}/partition_point_cloud/ori/{partition.partition_id}_camera.txt"
         # 打开一个文件用于写入，如果文件不存在则会被创建
         with open(txt_file, 'w') as file:
             # 遍历列表中的每个元素

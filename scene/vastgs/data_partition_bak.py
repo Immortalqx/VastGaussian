@@ -10,8 +10,6 @@
 """
 import copy
 import os
-
-import cv2
 import numpy as np
 from typing import NamedTuple
 import pickle
@@ -75,8 +73,6 @@ class ProgressiveDataPartitioning:
         ax.title.set_text('Plot of 2D Points')
         ax.set_xlabel('X-axis')
         ax.set_ylabel('Z-axis')
-        ax.set_aspect('equal')  # 设置XY轴比例相同
-
         fig.tight_layout()
         fig.savefig(os.path.join(self.model_path, 'pcd.png'), dpi=200)
         x_coords = np.array([cam.camera_center[0].item() for cam in train_cameras])
@@ -104,17 +100,14 @@ class ProgressiveDataPartitioning:
         cmap = plt.get_cmap('tab20')
         colors = [cmap(i) for i in range(cmap.N)]  # 获取调色盘中的所有颜色
 
-        # 设置XY轴比例相同
-        self.ax.set_aspect('equal')
-
         for i, partition in enumerate(partition_list):
             # 获取颜色，循环使用颜色列表
             color = colors[i % len(colors)]
 
             ori_bbox = partition.ori_camera_bbox
-            # extend_bbox = partition.extend_camera_bbox
+            extend_bbox = partition.extend_camera_bbox
             x_min, x_max, z_min, z_max = ori_bbox
-            # ex_x_min, ex_x_max, ex_z_min, ex_z_max = extend_bbox
+            ex_x_min, ex_x_max, ex_z_min, ex_z_max = extend_bbox
 
             # 创建原始矩形框
             rect_ori = patches.Rectangle(
@@ -122,11 +115,11 @@ class ProgressiveDataPartitioning:
                 linewidth=1, edgecolor=color, facecolor='none'
             )
 
-            # # 创建扩展矩形框
-            # rect_ext = patches.Rectangle(
-            #     (ex_x_min, ex_z_min), ex_x_max - ex_x_min, ex_z_max - ex_z_min,
-            #     linewidth=1, edgecolor=color, facecolor='none'
-            # )
+            # 创建扩展矩形框
+            rect_ext = patches.Rectangle(
+                (ex_x_min, ex_z_min), ex_x_max - ex_x_min, ex_z_max - ex_z_min,
+                linewidth=1, edgecolor=color, facecolor='none'
+            )
 
             # 添加矩形框到绘图中
             self.ax.add_patch(rect_ori)
@@ -147,32 +140,33 @@ class ProgressiveDataPartitioning:
             # 根据相机位置进行一个粗略的划分
             partition_dict = self.Camera_position_based_region_division(train_cameras)
             # 根据粗略划分的结果，进行调整细化
-            # partition_dict, refined_ori_bbox = self.refine_ori_bbox_visualHull(partition_dict)
+            partition_dict, refined_ori_bbox = self.refine_ori_bbox_visualHull(partition_dict)
             # partition_dict, refined_ori_bbox = self.refine_ori_bbox(partition_dict)
             # partition_dict, refined_ori_bbox = self.refine_ori_bbox_average(partition_dict)
-            # partition_list = self.Position_based_data_selection(partition_dict, refined_ori_bbox)
+            partition_list = self.Position_based_data_selection(partition_dict, refined_ori_bbox)
 
+            # FIXME to much camera id!!!
+            #  Code Wrong Position!
             # =========================================================
-            partition_list = self.refine_ori_bbox_hull(partition_dict)
-            self.partition_scene = partition_list
-            # partition_id_list = []
-            # for partition in partition_list:
-            #     partition_id_list.append(partition.partition_id)
-            #     camera_info = partition.cameras
-            #     # FIXME: 这里不能只是很简单的+ '.jpg'啊,需要判断一下!!!
-            #     # image_name_list = [camera_info[i].camera.image_name + '.jpg' for i in range(len(camera_info))]
-            #     image_name_list = [camera_info[i].camera.image_name + '.png' for i in range(len(camera_info))]
-            #     txt_file = f"{self.partition_ori_dir}/{partition.partition_id}_camera.txt"
-            #     # 打开一个文件用于写入，如果文件不存在则会被创建
-            #     with open(txt_file, 'w') as file:
-            #         # 遍历列表中的每个元素
-            #         for item in image_name_list:
-            #             # 将每个元素写入文件，每个元素占一行
-            #             file.write(f"{item}\n")
+            partition_id_list = []
+            for partition in partition_list:
+                partition_id_list.append(partition.partition_id)
+                camera_info = partition.cameras
+                # FIXME: 这里不能只是很简单的+ '.jpg'啊,需要判断一下!!!
+                # image_name_list = [camera_info[i].camera.image_name + '.jpg' for i in range(len(camera_info))]
+                image_name_list = [camera_info[i].camera.image_name + '.png' for i in range(len(camera_info))]
+                txt_file = f"{self.partition_ori_dir}/{partition.partition_id}_camera.txt"
+                # 打开一个文件用于写入，如果文件不存在则会被创建
+                with open(txt_file, 'w') as file:
+                    # 遍历列表中的每个元素
+                    for item in image_name_list:
+                        # 将每个元素写入文件，每个元素占一行
+                        file.write(f"{item}\n")
             # #########################################################
+
             self.draw_partition(partition_list)
-            # self.partition_scene = self.Visibility_based_camera_selection(partition_list)  # 输出经过可见性筛选后的场景 包括相机和点云
-            # self.save_partition_data()
+            self.partition_scene = self.Visibility_based_camera_selection(partition_list)  # 输出经过可见性筛选后的场景 包括相机和点云
+            self.save_partition_data()
         else:
             self.partition_scene = self.load_partition_data()
 
@@ -640,118 +634,30 @@ class ProgressiveDataPartitioning:
 
         return add_visible_camera_partition_list
 
-    def visualHull(self, camera_rotation, camera_position, buffer_distance, fov_x, fov_y, min_x, max_x, min_z, max_z):
-        # FIXME
-        #  这个算法似乎写的过于复杂了，不过现在能用就先不管。。。
-        #  其实直接根据buffer_distance定义相机坐标系下视锥体的四个角点，再根据rotation和position算世界坐标系的位置就可以了。。。
+    # def refine_ori_bbox_visualHull(self, partition_dict):
+    #     """将连续的相机坐标作为无缝分块的边界，并在每个相机的周围扩展3米"""
+    #     bbox_with_id = {}
+    #     buffer_distance = 3  # 设置缓冲距离为3米
+    #
+    #     # 初步计算每个分区的bbox，并在每个方向扩展3米
+    #     for partition_idx, cameras in partition_dict.items():
+    #         camera_list = cameras["camera_list"]
+    #         min_x = min(camera.pose[0] for camera in camera_list) - buffer_distance
+    #         max_x = max(camera.pose[0] for camera in camera_list) + buffer_distance
+    #         min_z = min(camera.pose[2] for camera in camera_list) - buffer_distance
+    #         max_z = max(camera.pose[2] for camera in camera_list) + buffer_distance
+    #         ori_camera_bbox = [min_x, max_x, min_z, max_z]
+    #         bbox_with_id[partition_idx] = ori_camera_bbox
+    #
+    #     # 返回新的分区和边界字典
+    #     new_partition_dict = {f"{partition_id}": cameras["camera_list"] for partition_id, cameras in
+    #                           partition_dict.items()}
+    #     return new_partition_dict, bbox_with_id
 
-        # 获取相机的Z轴方向（即相机的朝向）
-        forward_vector = camera_rotation[:, 2]
-        # 模长 = 1
-        forward_vector = forward_vector / np.linalg.norm(forward_vector)
-
-        # 获取相机的X轴方向（即左右方向）
-        right_vector = camera_rotation[:, 0]
-        # 模长 = |forward_vector| * tan(alpha) = 1 * np.tan(fov_x / 2)
-        right_vector = (right_vector / np.linalg.norm(right_vector)) * np.tan(fov_x / 2)
-
-        # 获取相机的Y轴方向（即上下方向）
-        up_vector = camera_rotation[:, 1]
-        # 模长 = |forward_vector| * tan(beta) = 1 * np.tan(fov_y / 2)
-        up_vector = (up_vector / np.linalg.norm(up_vector)) * np.tan(fov_y / 2)
-
-        # 计算水平视场角的边缘射线
-        left_edge_vector = forward_vector - right_vector
-        left_edge_vector = left_edge_vector / np.linalg.norm(left_edge_vector)
-        right_edge_vector = forward_vector + right_vector
-        right_edge_vector = right_edge_vector / np.linalg.norm(right_edge_vector)
-
-        # 计算垂直视场角的边缘射线
-        bottom_edge_vector = forward_vector - up_vector
-        bottom_edge_vector = bottom_edge_vector / np.linalg.norm(bottom_edge_vector)
-        top_edge_vector = forward_vector + up_vector
-        top_edge_vector = top_edge_vector / np.linalg.norm(top_edge_vector)
-
-        # 计算相机位置上沿各个方向延伸的射线
-        front_left_bottom_point = camera_position + buffer_distance * left_edge_vector + buffer_distance * bottom_edge_vector
-        front_left_top_point = camera_position + buffer_distance * left_edge_vector + buffer_distance * top_edge_vector
-        front_right_bottom_point = camera_position + buffer_distance * right_edge_vector + buffer_distance * bottom_edge_vector
-        front_right_top_point = camera_position + buffer_distance * right_edge_vector + buffer_distance * top_edge_vector
-
-        # 更新 bbox 范围
-        min_x = min(min_x, camera_position[0], front_left_bottom_point[0], front_left_top_point[0],
-                    front_right_bottom_point[0], front_right_top_point[0])
-        max_x = max(max_x, camera_position[0], front_left_bottom_point[0], front_left_top_point[0],
-                    front_right_bottom_point[0], front_right_top_point[0])
-        min_z = min(min_z, camera_position[2], front_left_bottom_point[2], front_left_top_point[2],
-                    front_right_bottom_point[2], front_right_top_point[2])
-        max_z = max(max_z, camera_position[2], front_left_bottom_point[2], front_left_top_point[2],
-                    front_right_bottom_point[2], front_right_top_point[2])
-
-        return min_x, max_x, min_z, max_z
-
-    # FIXME 可视化检查
-    def visualize_points_open3d(self, points_world):
-        """
-        使用 Open3D 可视化点云
-        :param points_world: 世界坐标系下的点云，形状为 (3, N) 的 numpy 数组
-        """
-        import open3d as o3d
-        # 转置点云为 (N, 3) 格式
-        points = points_world.T  # (N, 3)
-
-        # 创建 Open3D 点云对象
-        point_cloud = o3d.geometry.PointCloud()
-        point_cloud.points = o3d.utility.Vector3dVector(points)
-
-        # 添加颜色（可选，使用 z 值作为颜色）
-        z_min, z_max = points[:, 2].min(), points[:, 2].max()
-        z_normalized = (points[:, 2] - z_min) / (z_max - z_min)  # 归一化 z 值
-        colors = plt.cm.viridis(z_normalized)[:, :3]  # 获取颜色映射
-        point_cloud.colors = o3d.utility.Vector3dVector(colors)
-
-        # 可视化
-        o3d.visualization.draw_geometries([point_cloud], window_name="Point Cloud Visualization")
-
-    def depthHull(self, depth, camera_rotation, camera_position, fov_x, fov_y, min_x, max_x, min_z, max_z):
-        # 获取深度图的高和宽
-        h, w = depth.shape
-
-        # 计算相机内参
-        fx = w / (2 * np.tan(fov_x / 2))  # 焦距，基于fov_x
-        fy = h / (2 * np.tan(fov_y / 2))  # 焦距，基于fov_y
-        cx, cy = w / 2, h / 2  # 光心坐标
-
-        # 生成像素网格
-        u, v = np.meshgrid(np.arange(w), np.arange(h))
-
-        # 将像素坐标转换为相机坐标系下的点云
-        z = depth.flatten()
-        x = (u.flatten() - cx) * z / fx
-        y = (v.flatten() - cy) * z / fy
-        points_camera = np.vstack((x, y, z))  # (3, N) 点云
-
-        # 将点云从相机坐标系转换到世界坐标系
-        points_world = camera_rotation @ points_camera + camera_position.reshape(-1, 1)
-
-        # # FIXME 可视化检查
-        # self.visualize_points_open3d(points_world)
-
-        # 提取所有点的世界坐标
-        x_world, y_world, z_world = points_world
-
-        # 更新边界值
-        min_x = min(min_x, np.min(x_world), camera_position[0])
-        max_x = max(max_x, np.max(x_world), camera_position[0])
-        min_z = min(min_z, np.min(z_world), camera_position[2])
-        max_z = max(max_z, np.max(z_world), camera_position[2])
-
-        return min_x, max_x, min_z, max_z
-
-    def refine_ori_bbox_hull(self, partition_dict, use_depth=True):
+    def refine_ori_bbox_visualHull(self, partition_dict):
         """将连续的相机坐标作为无缝分块的边界，并在每个相机视角下扩展 3 米范围"""
         bbox_with_id = {}
-        buffer_distance = 3.0  # 设置缓冲距离为 3 米
+        buffer_distance = 3  # 设置缓冲距离为 3 米
 
         for partition_idx, cameras in partition_dict.items():
             camera_list = cameras["camera_list"]
@@ -763,29 +669,53 @@ class ProgressiveDataPartitioning:
             for camera in camera_list:
                 camera_position = camera.pose
                 camera_rotation = camera.rotation
-                fov_x = camera.camera.FoVx  # 水平视场角
-                fov_y = camera.camera.FoVy  # 垂直视场角
 
-                # TODO 只能够在这里临时加载depth了！
-                #  camera.camera是SimpleCamera啊，不是CameraInfo
-                if not use_depth:
-                    min_x, max_x, min_z, max_z = self.visualHull(camera_rotation, camera_position, buffer_distance,
-                                                                 fov_x, fov_y, min_x, max_x, min_z, max_z)
-                else:
-                    depth = cv2.imread(camera.camera.depth_path, cv2.IMREAD_UNCHANGED)
-                    if depth is None:
-                        min_x, max_x, min_z, max_z = self.visualHull(camera_rotation, camera_position, buffer_distance,
-                                                                     fov_x, fov_y, min_x, max_x, min_z, max_z)
-                    else:
-                        depth = cv2.resize(depth, (camera.camera.image_width, camera.camera.image_height),
-                                           interpolation=cv2.INTER_NEAREST)
-                        min_x, max_x, min_z, max_z = self.depthHull(depth, camera_rotation, camera_position,
-                                                                    fov_x, fov_y, min_x, max_x, min_z, max_z)
+                # 通过相机的光心发出一条长度为 3 米的射线，并将其投影在 xz 平面上来计算
+                # 获取相机的Z轴方向
+                forward_vector = camera_rotation[:, 2]
+                forward_vector = forward_vector / np.linalg.norm(forward_vector)  # 单位化
+
+                # 计算缓冲区域边界点
+                front_point = camera_position + buffer_distance * forward_vector
+
+                # 是否考虑camera_position，否则如果是一个环视，那bbox就变成环视中心的小区域了，还是没拍到的。
+                # 更新 bbox 的范围
+                min_x = min(min_x, camera_position[0], front_point[0])
+                max_x = max(max_x, camera_position[0], front_point[0])
+                min_z = min(min_z, camera_position[2], front_point[2])
+                max_z = max(max_z, camera_position[2], front_point[2])
 
             ori_camera_bbox = [min_x, max_x, min_z, max_z]
             bbox_with_id[partition_idx] = ori_camera_bbox
 
+        # # 2.按照z轴对相机的边界进行修正
+        # for m in range(1, self.m_region + 1):
+        #     for n in range(1, self.n_region + 1):
+        #         if n + 1 == self.n_region + 1:
+        #             break
+        #         partition_idx_1 = str(m) + '_' + str(n + 1)  # 上边块
+        #         min_x_1, max_x_1, min_z_1, max_z_1 = bbox_with_id[partition_idx_1]
+        #         partition_idx_2 = str(m) + '_' + str(n)  # 下边块
+        #         min_x_2, max_x_2, min_z_2, max_z_2 = bbox_with_id[partition_idx_2]
+        #         mid_x, mid_y, mid_z = partition_dict[partition_idx_2]["z_mid_camera"].pose
+        #         bbox_with_id[partition_idx_1] = [min_x_1, max_x_1, mid_z, max_z_1]
+        #         bbox_with_id[partition_idx_2] = [min_x_2, max_x_2, min_z_2, mid_z]
+        #
+        # # 3.按照x轴对相机的边界进行修正
+        # for n in range(1, self.n_region + 1):
+        #     for m in range(1, self.m_region + 1):
+        #         if m + 1 == self.m_region + 1:
+        #             break
+        #         partition_idx_1 = str(m) + '_' + str(n)  # 左边块
+        #         min_x_1, max_x_1, min_z_1, max_z_1 = bbox_with_id[partition_idx_1]
+        #         partition_idx_2 = str(m + 1) + '_' + str(n)  # 右边块
+        #         min_x_2, max_x_2, min_z_2, max_z_2 = bbox_with_id[partition_idx_2]
+        #         mid_x, mid_y, mid_z = partition_dict[partition_idx_1]["x_mid_camera"].pose
+        #         bbox_with_id[partition_idx_1] = [min_x_1, mid_x, min_z_1, max_z_1]
+        #         bbox_with_id[partition_idx_2] = [mid_x, max_x_2, min_z_2, max_z_2]
+
         # 返回新的分区和边界字典
+
         new_partition_dict = {
             f"{partition_id}": cameras["camera_list"] for partition_id, cameras in partition_dict.items()
         }
@@ -831,7 +761,9 @@ class ProgressiveDataPartitioning:
 
             point_num += points.shape[0]
             storePly(os.path.join(self.partition_ori_dir, f"{partition_idx}.ply"), points, colors * 255)
+
         print(f"Total ori point number: {pcd.points.shape[0]}\n", f"Total before extend point number: {point_num}\n")
+
         return partition_list
 
     # def VisualHull_based_camera_selection(self, partition_list):

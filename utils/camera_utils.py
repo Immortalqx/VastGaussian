@@ -155,11 +155,11 @@ def loadCamPartition(args, id, cam_info, image_width, image_height):
     # image_width = resolution[0]
     # image_height = resolution[1]
 
+    depth_path = cam_info.image_path.replace("/images/", "/depth/").replace(".png", ".tiff")
     return SimpleCamera(
         colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T,
         FoVx=cam_info.FovX, FoVy=cam_info.FovY, image_name=cam_info.image_name,
-        uid=id, width=image_width, height=image_height, data_device=args.data_device)
-
+        uid=id, width=image_width, height=image_height, data_device=args.data_device, depth_path=depth_path)
 
 def cameraList_from_camInfos_partition(cam_infos, args):
     camera_list = []
